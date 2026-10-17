@@ -8,10 +8,10 @@ services:
 
   monitor:
     # Prebuilt multi-arch image (see .github/workflows/docker-publish.yml).
-    # umbrelOS does not build from source — it only pulls this image.
-    # TODO: after the first CI run, append @sha256:<digest> (printed by the workflow's
-    # last step) so the exact reviewed build is pinned.
-    image: ghcr.io/martijnvanonz/umbrel-ups-monitor:0.7.0
+    # umbrelOS does not build from source — it only pulls this image. Pinned by
+    # @sha256 (multi-arch manifest-list digest) to the reviewed build: CI run
+    # 39042525329 from commit 5bf411f.
+    image: ghcr.io/martijnvanonz/umbrel-ups-monitor:0.7.0@sha256:e4c8e5373f15e7e05948c4c6547f458fe9066701f7987b6f49c3e37922c91358
     restart: on-failure
     # host access so we can shut the host down via nsenter -t 1
     pid: host
