@@ -8,6 +8,7 @@ CONFIG="${STATE_DIR}/config.env"
 OUTAGE_FLAG="${STATE_DIR}/on_battery.flag"
 UNREACH_FILE="${STATE_DIR}/unreach_count"
 LAST_SHUTDOWN="${STATE_DIR}/last_shutdown"
+PROC_STAT="${PROC_STAT:-/proc/stat}"   # host-wide boot time (btime); overridable for tests
 UNREACH_LIMIT=4   # consecutive unreachable polls during an outage before assuming the UPS is failing
 mkdir -p "$STATE_DIR" 2>/dev/null
 
@@ -70,12 +71,31 @@ do_shutdown(){
   fi
 }
 
+# An outage flag from before the last host boot is stale (the host was shut down during the
+# outage). Left alone, the next boot would see "on battery + NUT unreachable" while the NAS is
+# still starting, and shut down again in a loop. A flag written after boot is kept.
+clear_stale_flag(){
+  local btime start
+  [ -f "$OUTAGE_FLAG" ] || return
+  btime=$(sed -n 's/^btime //p' "$PROC_STAT" 2>/dev/null)
+  if ! [[ "$btime" =~ ^[0-9]+$ ]]; then
+    log "WARNING: cannot read boot time from ${PROC_STAT} — not checking for a stale outage flag"
+    return
+  fi
+  start=$(cat "$OUTAGE_FLAG" 2>/dev/null)
+  if ! [[ "$start" =~ ^[0-9]+$ ]] || [ "$start" -lt "$btime" ]; then
+    log "stale outage flag from before last boot — cleared"
+    rm -f "$OUTAGE_FLAG" "$UNREACH_FILE"
+  fi
+}
+
 evaluate(){
   local status charge reachable=1 count now start
   if [ -z "$NUT_HOST" ]; then
     log "NUT server not set — open the app and configure it on the settings page"
     return
   fi
+  clear_stale_flag
   status=$(nut_get ups.status) || reachable=0
 
   # Unreachable: only act if we were already in an outage (then assume the UPS is dying).

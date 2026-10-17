@@ -39,6 +39,8 @@ new_case(){
   export STATE_DIR="$S" NSENTER_LOG="$TMP/nsenter.log"
   : > "$NSENTER_LOG"
   unset FAKE_NSENTER_FAIL
+  # fake host boot time: ~28h ago, so flags written during a test are "after boot"
+  export PROC_STAT="$TMP/proc_stat"; printf 'cpu 1 2 3\nbtime %s\n' $(( $(date +%s) - 100000 )) > "$PROC_STAT"
 }
 set_nut(){ echo "$1" > "$VALUES"; }               # JSON
 set_config(){ printf '%s\n' "$@" > "$S/config.env"; }  # KEY=value lines
@@ -136,6 +138,35 @@ SH
 set_nut '{"ups.status":"OB DISCHRG LB"}'; poll
 [ "$(sed -n 3p "$NSENTER_LOG")" = "-t 1 -m -u -n -i /sbin/shutdown -h now UPS: UPS Low Battery (LB)" ] && ok "fallback: shutdown -h now third" || bad "fallback third: $(cat "$NSENTER_LOG")"
 grep -q "ran: nsenter shutdown" "$TMP/watch.out" && ok "log says which command ran" || bad "log says which command ran"
+
+echo "== stale outage flag (reboot loop)"
+BTIME="$(( $(date +%s) - 3600 ))"     # host booted 1h ago
+set_btime(){ printf 'cpu 1 2 3\nbtime %s\n' "$BTIME" > "$PROC_STAT"; }
+unreach_polls(){ set_config "NUT_HOST=127.0.0.1" "NUT_PORT=$DEAD_PORT" "NUT_UPS=ups" "$@"; poll; poll; poll; poll; poll; }
+
+new_case; set_btime; echo $(( BTIME - 600 )) > "$S/on_battery.flag"; unreach_polls
+expect_no_shutdown "flag older than boot + NUT unreachable: no shutdown"
+[ ! -e "$S/on_battery.flag" ] && ok "stale flag removed" || bad "stale flag removed"
+grep -q "stale outage flag from before last boot — cleared" "$TMP/watch.out" && ok "stale flag logged" || bad "stale flag logged"
+
+new_case; set_btime; echo $(( BTIME + 600 )) > "$S/on_battery.flag"; unreach_polls
+expect_shutdown "flag newer than boot + NUT unreachable 4 polls: shutdown (kept)"
+
+new_case; cfg "SHUTDOWN_AFTER_SECONDS=90"; set_btime; echo $(( BTIME - 600 )) > "$S/on_battery.flag"
+set_nut '{"ups.status":"OB DISCHRG","battery.charge":"95"}'; poll
+expect_no_shutdown "flag older than boot + OB: no timer shutdown"
+[ "$(cat "$S/on_battery.flag")" -ge $(( $(date +%s) - 10 )) ] && ok "flag rewritten with current time" || bad "flag rewritten: $(cat "$S/on_battery.flag")"
+
+new_case; rm -f "$PROC_STAT"; echo $(( BTIME - 600 )) > "$S/on_battery.flag"; unreach_polls
+expect_shutdown "PROC_STAT unreadable: old behaviour (shutdown), flag not cleared"
+grep -q "cannot read boot time" "$TMP/watch.out" && ok "unreadable boot time warns" || bad "unreadable boot time warns"
+
+new_case; set_btime; : > "$S/on_battery.flag"; unreach_polls
+expect_no_shutdown "empty flag + NUT unreachable: no shutdown"
+[ ! -e "$S/on_battery.flag" ] && ok "empty flag removed" || bad "empty flag removed"
+new_case; set_btime; echo garbage > "$S/on_battery.flag"; unreach_polls
+expect_no_shutdown "garbage flag + NUT unreachable: no shutdown"
+[ ! -e "$S/on_battery.flag" ] && ok "garbage flag removed" || bad "garbage flag removed"
 
 # ---- shell syntax / lint ----------------------------------------------------
 echo "== static checks"
