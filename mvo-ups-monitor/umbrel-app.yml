@@ -1,10 +1,10 @@
 manifestVersion: "1.1"
-id: homelab-ups-monitor
+id: mvo-ups-monitor
 name: UPS Monitor
 tagline: Gracefully shut down Umbrel when a remote NUT UPS hits low battery
-icon: https://raw.githubusercontent.com/empewoow/umbrel-app-store/master/homelab-ups-monitor/icon.png
+icon: https://raw.githubusercontent.com/martijnvanonz/umbrel-app-store/master/mvo-ups-monitor/icon.png
 category: networking
-version: "0.6.2"
+version: "0.7.0"
 port: 8099
 description: >-
   Umbrel has no built-in UPS support and no UPS/NUT app exists in any store.
@@ -30,21 +30,24 @@ description: >-
     down only when the UPS itself signals critical low battery. Set e.g. 20 to shut
     down earlier, with more margin.
 
+  • Shut down after this many seconds on battery — optional. Shuts down when the
+    power has been out this long without a break (e.g. 90). Leave blank to turn off.
+
   • Poll interval (seconds) — how often to query the NUT server (default 15)
 
 
-  The app always shuts down when the UPS reports critical low battery, so you are
-  protected even if you leave the % blank.
+  The app always shuts down when the UPS reports critical low battery or Forced
+  Shutdown (FSD), so you are protected even if you leave the optional fields blank.
 
 
   Your NUT server must accept network queries. Test with:
   printf 'GET VAR ups ups.status\nLOGOUT\n' | nc <nut-host> 3493
 developer: Matthijs
-website: https://github.com/empewoow/umbrel-app-store
-submitter: Matthijs
-submission: https://github.com/empewoow/umbrel-app-store
-repo: https://github.com/empewoow/umbrel-app-store
-support: https://github.com/empewoow/umbrel-app-store/issues
+website: https://github.com/martijnvanonz/umbrel-app-store
+submitter: Martijn
+submission: https://github.com/martijnvanonz/umbrel-app-store
+repo: https://github.com/martijnvanonz/umbrel-app-store
+support: https://github.com/martijnvanonz/umbrel-app-store/issues
 gallery: []
 widgets:
   - id: "status"
@@ -69,11 +72,12 @@ widgets:
           text: "12"
           subtext: "%"
 releaseNotes: >-
-  The dashboard widget now works, the app version is shown on the settings page, and
-  the settings screen has clearer labels, inline validation and a friendly first-run
-  state. Under the hood: settings are parsed safely instead of evaluated (closes a
-  command-injection path), the form is CSRF-protected, and the shutdown control is a
-  single battery % with the UPS's own low-battery signal always honoured as a backstop.
+  Hardened fork of empewoow/umbrel-app-store. The image is built by this repository's
+  own CI from the reviewed source only: GitHub Actions are pinned to commit SHAs, the
+  base image is pinned by digest, and no :latest tag is pushed. New: the host is also
+  shut down on Forced Shutdown (FSD) from the NUT master, and on a new optional timer
+  (seconds continuously on battery). Shutdown now runs poweroff first, the same command
+  as umbrelOS's own Shutdown button, and the reason is shown on the status page.
 
 dependencies: []
 path: ""
