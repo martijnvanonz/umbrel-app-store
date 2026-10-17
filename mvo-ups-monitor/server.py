@@ -21,9 +21,10 @@ import html
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-APP_VERSION = "0.6.2"   # keep in sync with umbrel-app.yml / docker-compose.yml / workflow
+APP_VERSION = "0.7.0"   # keep in sync with umbrel-app.yml / docker-compose.yml / workflow
 STATE_DIR = "/state"
 CONFIG = os.path.join(STATE_DIR, "config.env")
+LAST_SHUTDOWN = os.path.join(STATE_DIR, "last_shutdown")
 PORT = 8099
 MAX_BODY = 8192
 CSRF_TOKEN = os.urandom(16).hex()
@@ -42,11 +43,15 @@ FIELDS = [
     ("SHUTDOWN_AT_PERCENT", "Shut down early at battery %", "", 'type="number" min="1" max="100"',
      "Optional. Umbrel shuts down when the battery reaches this level (e.g. 20). Leave blank to wait until the UPS reports critical low battery.",
      r"100|[0-9]{1,2}"),
+    ("SHUTDOWN_AFTER_SECONDS", "Shut down after this many seconds on battery", "", 'type="number" min="1" max="99999"',
+     "Optional. Umbrel shuts down when the power has been out for this long without a break (e.g. 90). Leave blank to turn this off.",
+     r"[0-9]{1,5}"),
     ("CHECK_INTERVAL", "How often to check (seconds)", "15", 'type="number" min="1" max="3600"',
      "How often to poll the UPS server.",
      r"[0-9]{1,4}"),
 ]
 KEYS = [f[0] for f in FIELDS]
+PLACEHOLDERS = {"SHUTDOWN_AFTER_SECONDS": "90"}   # hint only; the setting stays off until filled in
 VALIDATORS = {f[0]: re.compile("^(%s)$" % f[5]) for f in FIELDS}
 
 
@@ -117,6 +122,8 @@ def widget_payload(cfg):
         status = "On Battery"
     if "LB" in tokens:
         status = "Low Battery"
+    if "FSD" in tokens:
+        status = "Forced Shutdown"
     charge = nut_get(cfg, "battery.charge") or "?"
     runtime = nut_get(cfg, "battery.runtime")
     runtime_min = str(int(runtime) // 60) if runtime and runtime.isdigit() else "?"
@@ -135,6 +142,8 @@ def _badge(cfg):
     if st is None:
         return "warn", "Unreachable"
     tokens = st.split()
+    if "FSD" in tokens:
+        return "crit", "Forced Shutdown"
     if "LB" in tokens:
         return "crit", "Low Battery"
     if "OB" in tokens:
@@ -162,13 +171,21 @@ def page(cfg, saved=False, errors=None, form_values=None):
     rows = ""
     for k, label, default, attrs, hint, _rx in FIELDS:
         val = html.escape(fv.get(k, ""))
-        ph = ('placeholder="%s"' % html.escape(default)) if default else ""
+        ph_text = PLACEHOLDERS.get(k, default)
+        ph = ('placeholder="%s"' % html.escape(ph_text)) if ph_text else ""
         err = errors.get(k)
         err_html = '<span class="err">%s</span>' % html.escape(err) if err else ""
         inv = ' class="invalid"' if err else ""
         rows += ('<label>%s<input %s name="%s" value="%s" %s%s>'
                  '<span class="hint">%s</span>%s</label>'
                  % (html.escape(label), attrs, k, val, ph, inv, html.escape(hint), err_html))
+
+    last_note = ""
+    try:
+        with open(LAST_SHUTDOWN) as fh:
+            last_note = '<div class="last">Last shutdown by this app: %s</div>' % html.escape(fh.read(500).strip())
+    except OSError:
+        pass
 
     saved_note = '<div class="saved">Saved. Changes apply within one poll interval.</div>' if saved else ""
     err_note = '<div class="errbox">Some values were not valid — please correct the highlighted fields.</div>' if errors else ""
@@ -203,16 +220,17 @@ button:hover{filter:brightness(1.08)}
 button:focus-visible{outline:2px solid #fff;outline-offset:2px}
 .saved{background:#064e3b;color:#4ade80;padding:10px 14px;border-radius:8px;margin-bottom:16px;font-size:14px}
 .errbox{background:#7f1d1d;color:#fca5a5;padding:10px 14px;border-radius:8px;margin-bottom:16px;font-size:14px}
+.last{background:#1e293b;border:1px solid #334155;border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:13px;color:#cbd5e1}
 .ver{color:#6b7280;font-size:11px;text-align:center;margin:16px 0 0}
 @media(max-width:520px){.cards{grid-template-columns:repeat(2,1fr)}}
 </style></head><body><div class="wrap">
 <h1>UPS Monitor <span class="badge %s">%s</span></h1>
 <p class="sub">Gracefully shuts down Umbrel when a remote UPS runs low during a power outage.</p>
-%s%s%s
+%s%s%s%s
 <form method="post" action="/save">%s<input type="hidden" name="_csrf" value="%s"><button type="submit">Save settings</button></form>
 <p class="ver">UPS Monitor v%s</p>
 </div>%s</body></html>""" % (
-        badge_class, html.escape(badge_text), saved_note, err_note, body_top,
+        badge_class, html.escape(badge_text), last_note, saved_note, err_note, body_top,
         rows, CSRF_TOKEN, APP_VERSION, strip_saved)
 
 
