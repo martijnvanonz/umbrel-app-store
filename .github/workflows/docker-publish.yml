@@ -2,21 +2,22 @@ name: Build & publish image
 
 # Builds the UPS monitor image multi-arch (amd64 + arm64) and pushes it to
 # GitHub Container Registry. umbrelOS does not build — it only pulls this image.
+# Every action is pinned to a full commit SHA (version in the trailing comment).
 
 on:
   push:
     branches: [master]
     paths:
-      - "homelab-ups-monitor/Dockerfile"
-      - "homelab-ups-monitor/watch.sh"
-      - "homelab-ups-monitor/entrypoint.sh"
-      - "homelab-ups-monitor/server.py"
+      - "mvo-ups-monitor/Dockerfile"
+      - "mvo-ups-monitor/watch.sh"
+      - "mvo-ups-monitor/entrypoint.sh"
+      - "mvo-ups-monitor/server.py"
       - ".github/workflows/docker-publish.yml"
   workflow_dispatch: {}   # lets you also trigger it manually from the Actions tab
 
 env:
-  IMAGE: ghcr.io/empewoow/homelab-ups-monitor
-  VERSION: "0.6.2"        # bump this together with version in umbrel-app.yml
+  IMAGE: ghcr.io/martijnvanonz/umbrel-ups-monitor
+  VERSION: "0.7.0"        # bump this together with version in umbrel-app.yml
 
 jobs:
   build:
@@ -25,13 +26,13 @@ jobs:
       contents: read
       packages: write     # required to push to ghcr.io
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
-      - uses: docker/setup-qemu-action@v3        # arm64 emulation for the Pi build
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3.7.0 (arm64 emulation)
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
 
       - name: Log in to GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -39,14 +40,12 @@ jobs:
 
       - name: Build & push (amd64 + arm64)
         id: build
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:
-          context: ./homelab-ups-monitor
+          context: ./mvo-ups-monitor
           platforms: linux/amd64,linux/arm64
           push: true
-          tags: |
-            ${{ env.IMAGE }}:${{ env.VERSION }}
-            ${{ env.IMAGE }}:latest
+          tags: ${{ env.IMAGE }}:${{ env.VERSION }}
 
       - name: Print image digest (for pinning docker-compose.yml)
         run: |
